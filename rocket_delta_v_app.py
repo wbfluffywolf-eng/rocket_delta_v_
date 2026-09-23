@@ -3,402 +3,283 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 
-# ------------------------------------------------------------
-# Multi-Stage Rocket Velocity-Change Explorer
-#
-# Source:
-# T.-W. Lee, Aerospace Propulsion, Chapter 8:
-#   Eq. (8.5):  g0 = 9.8066 m/s^2
-#   Eq. (8.8):  Ueq = Is * g0
-#   Eq. (8.11): ΔU = Ueq ln(RM) = g0 Is ln(RM)
-#   Eq. (8.18): M0 = ML + Ms + Mp
-#   Eq. (8.19): Mb = ML + Ms
-#   Eq. (8.20): λ = ML / (Mp + Ms)
-#   Eq. (8.21): ε = Ms / (Mp + Ms)
-#   Eq. (8.23): RM = M0/Mb = (1+λ)/(ε+λ)
-#   Eq. (8.24): ΔU = Σ [Ueq,i ln(RM,i)]
-#   Eq. (8.25): ΔU = n Ueq ln[(1+λ)/(ε+λ)] for similar stages
-#
-# Assignment parameter ranges:
-#   n: 1–5 stages
-#   Is: 160–385 s
-#   λ: 1–15%
-#   ε: 18–48%
-# ------------------------------------------------------------
+# T.-W. Lee, Aerospace Propulsion, Ch. 8
+# Eq. 8.5: g0 = 9.8066 m/s^2
+# Eq. 8.8: Ueq = Is*g0
+# Eq. 8.11: Delta U = Ueq*ln(RM)
+# Eq. 8.18: M0 = ML + Ms + Mp
+# Eq. 8.19: Mb = ML + Ms
+# Eq. 8.20: lambda = ML/(Mp+Ms)
+# Eq. 8.21: epsilon = Ms/(Mp+Ms)
+# Eq. 8.23: RM = (1+lambda)/(epsilon+lambda)
+# Eq. 8.24: Delta U = sum[Ueq_i ln(RM_i)]
+# Eq. 8.25: Delta U = n*Ueq*ln[(1+lambda)/(epsilon+lambda)] for similar stages
 
-st.set_page_config(page_title="Multi-Stage Rocket ΔU Explorer", layout="wide")
+st.set_page_config(page_title="Rocket Delta-U Explorer", layout="wide")
+G0 = 9.8066
 
-G0 = 9.8066  # m/s^2, Eq. (8.5)
+def rm_from_ratios(lam, eps):
+    return (1 + lam) / (eps + lam)
+
+def ueq(Is):
+    return Is * G0
 
 st.title("🚀 Multi-Stage Rocket Velocity-Change Explorer")
-st.caption(
-    "Equations and notation follow T.-W. Lee, Aerospace Propulsion, Chapter 8. "
-    "Slider limits follow the assignment."
+st.caption("Equations follow T.-W. Lee, Aerospace Propulsion, Chapter 8.")
+
+mode = st.radio(
+    "Staging model",
+    ["Similar Stages — Eq. (8.25)", "Individual Stages — Eq. (8.24)"],
+    horizontal=True
 )
 
-with st.expander("Book equations and complete mass-ratio back-substitution", expanded=False):
-    st.markdown(r"""
-### Book definitions
-
-The initial rocket mass is
-
-\[
-M_0=M_L+M_s+M_p
-\]
-
-and the burnout mass is
-
-\[
-M_b=M_L+M_s
-\]
-
-The payload ratio is
-
-\[
-\lambda
-=
-\frac{M_L}{M_0-M_L}
-=
-\frac{M_L}{M_p+M_s}
-\]
-
-The structural mass coefficient is
-
-\[
-\epsilon
-=
-\frac{M_s}{M_p+M_s}
-\]
-
-### Back-substitution
-
-Let
-
-\[
-S=M_p+M_s
-\]
-
-Then, from the definitions above,
-
-\[
-M_L=\lambda S
-\]
-
-and
-
-\[
-M_s=\epsilon S
-\]
-
-The initial mass becomes
-
-\[
-M_0=M_L+M_s+M_p
-\]
-
-Since \(M_s+M_p=S\),
-
-\[
-M_0=\lambda S+S
-\]
-
-so
-
-\[
-M_0=(1+\lambda)S
-\]
-
-The burnout mass is
-
-\[
-M_b=M_L+M_s
-\]
-
-therefore
-
-\[
-M_b=\lambda S+\epsilon S
-\]
-
-or
-
-\[
-M_b=(\lambda+\epsilon)S
-\]
-
-Thus,
-
-\[
-R_M=\frac{M_0}{M_b}
-=
-\frac{(1+\lambda)S}{(\epsilon+\lambda)S}
-\]
-
-and the common factor \(S\) cancels:
-
-\[
-\boxed{
-R_M=\frac{1+\lambda}{\epsilon+\lambda}
-}
-\]
-
-which is Eq. (8.23).
-
-### Specific impulse and equivalent exhaust velocity
-
-From Eq. (8.8),
-
-\[
-\boxed{
-U_{eq}=I_s g_0
-}
-\]
-
-where the book gives
-
-\[
-g_0=9.8066\ \mathrm{m/s^2}
-\]
-
-For one stage, Eq. (8.11) is
-
-\[
-\Delta U
-=
-U_{eq}\ln R_M
-=
-g_0 I_s\ln R_M
-\]
-
-For an arbitrary number of stages, Eq. (8.24) is
-
-\[
-\Delta U
-=
-\sum_{i=1}^{n}
-U_{eq,i}\ln R_{M,i}
-\]
-
-For the book's "similar stages" assumption,
-\(U_{eq,i}=U_{eq}\), \(\epsilon_i=\epsilon\), and \(\lambda_i=\lambda\),
-Eq. (8.25) becomes
-
-\[
-\boxed{
-\Delta U
-=
-nU_{eq}
-\ln\left(\frac{1+\lambda}{\epsilon+\lambda}\right)
-}
-\]
-
-Using Eq. (8.8),
-
-\[
-\boxed{
-\Delta U
-=
-n I_s g_0
-\ln\left(\frac{1+\lambda}{\epsilon+\lambda}\right)
-}
-\]
-""")
-
-def mass_ratio(payload_ratio, structural_mass_coefficient):
-    """Eq. (8.23)."""
-    return (1.0 + payload_ratio) / (
-        structural_mass_coefficient + payload_ratio
-    )
-
-def equivalent_exhaust_velocity(Is_seconds):
-    """Eq. (8.8)."""
-    return Is_seconds * G0
-
-def total_delta_u(n, Is_seconds, payload_ratio, structural_mass_coefficient):
-    """Eq. (8.25) with Ueq = Is*g0 from Eq. (8.8)."""
-    rm = mass_ratio(payload_ratio, structural_mass_coefficient)
-    ueq = equivalent_exhaust_velocity(Is_seconds)
-    return n * ueq * np.log(rm)
-
-tab1, tab2 = st.tabs([
-    "Similar-Stage Rocket Builder",
-    "Two-Variable Contour Study"
+tab_model, tab_contour, tab_eq = st.tabs([
+    "Rocket Model",
+    "Two-Variable Contour Study",
+    "Equations & Calculation Steps"
 ])
 
-with tab1:
-    st.subheader("Similar-stage rocket model")
-    st.write(
-        "This tab uses the similar-stage form of Eq. (8.25), where each stage "
-        "has the same equivalent exhaust velocity, payload ratio, and structural mass coefficient."
-    )
+with tab_model:
+    if mode.startswith("Similar"):
+        st.subheader("Similar stages — Eq. (8.25)")
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            n = st.slider("Number of stages, n", 1, 5, 2, 1, key="sim_n")
+        with c2:
+            Is = st.slider("Specific impulse, Is (s)", 160, 385, 300, 1, key="sim_Is")
+        with c3:
+            lam_pct = st.slider("Payload ratio, λ (%)", 1.0, 15.0, 7.0, 0.1, key="sim_lam")
+        with c4:
+            eps_pct = st.slider("Structural mass coefficient, ε (%)", 18.0, 48.0, 25.0, 0.1, key="sim_eps")
 
-    c1, c2, c3, c4 = st.columns(4)
+        lam, eps = lam_pct/100, eps_pct/100
+        RM = rm_from_ratios(lam, eps)
+        Ueq = ueq(Is)
+        du_stage = Ueq*np.log(RM)
+        du_total = n*du_stage
 
-    with c1:
-        n = st.slider("Number of stages, n", 1, 5, 2, 1)
+        a,b,c,d = st.columns(4)
+        a.metric("Mass ratio, RM", f"{RM:.4f}")
+        b.metric("Equivalent exhaust velocity, Ueq", f"{Ueq:,.1f} m/s")
+        c.metric("ΔU per stage", f"{du_stage/1000:.3f} km/s")
+        d.metric("Total ΔU", f"{du_total/1000:.3f} km/s")
 
-    with c2:
-        Is = st.slider("Specific impulse, Is (s)", 160, 385, 300, 1)
+        st.markdown("#### Mass fractions implied by λ and ε")
+        fractions = pd.DataFrame({
+            "Mass category":["Payload","Structure","Propellant"],
+            "Fraction of initial stage mass":[
+                lam/(1+lam),
+                eps/(1+lam),
+                (1-eps)/(1+lam)
+            ]
+        })
+        fractions["Percent"] = 100*fractions["Fraction of initial stage mass"]
+        st.dataframe(fractions, use_container_width=True, hide_index=True)
 
-    with c3:
-        lambda_pct = st.slider("Payload ratio, λ (%)", 1.0, 15.0, 7.0, 0.1)
+        stage_df = pd.DataFrame({
+            "Stage":np.arange(1,n+1),
+            "Is (s)":[Is]*n,
+            "Ueq (m/s)":[Ueq]*n,
+            "λ":[lam]*n,
+            "ε":[eps]*n,
+            "RM":[RM]*n,
+            "ΔUi (m/s)":[du_stage]*n
+        })
+        st.markdown("#### Stage-by-stage contribution")
+        st.dataframe(stage_df, use_container_width=True, hide_index=True)
 
-    with c4:
-        epsilon_pct = st.slider(
-            "Structural mass coefficient, ε (%)", 18.0, 48.0, 25.0, 0.1
-        )
+        fig = go.Figure(go.Bar(
+            x=stage_df["Stage"], y=stage_df["ΔUi (m/s)"],
+            text=[f"{v/1000:.2f} km/s" for v in stage_df["ΔUi (m/s)"]],
+            textposition="outside"
+        ))
+        fig.update_layout(title="Velocity-change contribution of each similar stage",
+                          xaxis_title="Stage", yaxis_title="ΔUi (m/s)", height=430)
+        st.plotly_chart(fig, use_container_width=True)
+        st.info("Eq. (8.25) gives equal stage contributions because similar stages use the same Ueq, λ, ε, and RM.")
 
-    lam = lambda_pct / 100.0
-    eps = epsilon_pct / 100.0
+    else:
+        st.subheader("Individual stages — Eq. (8.24)")
+        st.write("Stage 1 is the bottom/first-burning stage. Each lower stage carries the complete initial mass of the stage above it.")
 
-    RM = mass_ratio(lam, eps)
-    Ueq = equivalent_exhaust_velocity(Is)
-    delta_u_stage = Ueq * np.log(RM)
-    delta_u_total = total_delta_u(n, Is, lam, eps)
+        n = st.slider("Number of stages", 1, 5, 2, 1, key="ind_n")
+        final_payload = st.number_input("Final payload mass, ML (kg)", min_value=1.0, value=1000.0, step=50.0)
 
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Mass ratio, RM", f"{RM:.4f}")
-    m2.metric("Equivalent exhaust velocity, Ueq", f"{Ueq:,.1f} m/s")
-    m3.metric("ΔU per stage", f"{delta_u_stage/1000:.3f} km/s")
-    m4.metric("Total ΔU", f"{delta_u_total/1000:.3f} km/s")
+        defaults_mp = [9000.,2200.,650.,180.,60.]
+        defaults_ms = [1800.,500.,160.,60.,25.]
+        defaults_is = [280.,310.,330.,350.,365.]
 
-    stage_df = pd.DataFrame({
-        "Stage, i": np.arange(1, n + 1),
-        "Is (s)": [Is] * n,
-        "Ueq (m/s)": [Ueq] * n,
-        "λ": [lam] * n,
-        "ε": [eps] * n,
-        "RM": [RM] * n,
-        "ΔUi (m/s)": [delta_u_stage] * n,
-    })
+        inputs = []
+        st.markdown("#### Enter stage properties")
+        for i in range(1,n+1):
+            st.markdown(f"**Stage {i}**")
+            x,y,z = st.columns(3)
+            with x:
+                Mp = st.number_input(f"Stage {i} propellant mass, Mp (kg)", min_value=0.1,
+                                     value=defaults_mp[i-1], step=50.0, key=f"Mp{i}")
+            with y:
+                Ms = st.number_input(f"Stage {i} structural mass, Ms (kg)", min_value=0.1,
+                                     value=defaults_ms[i-1], step=10.0, key=f"Ms{i}")
+            with z:
+                Is_i = st.number_input(f"Stage {i} specific impulse, Is (s)", min_value=1.0,
+                                       value=defaults_is[i-1], step=1.0, key=f"Is{i}")
+            inputs.append((i,Mp,Ms,Is_i))
 
-    st.dataframe(stage_df, use_container_width=True, hide_index=True)
+        carried = final_payload
+        rows = []
+        for i,Mp,Ms,Is_i in reversed(inputs):
+            ML = carried
+            M0 = ML + Ms + Mp
+            Mb = ML + Ms
+            RM = M0/Mb
+            Ueq = ueq(Is_i)
+            dUi = Ueq*np.log(RM)
+            rows.append({
+                "Stage":i, "ML carried (kg)":ML, "Ms (kg)":Ms, "Mp (kg)":Mp,
+                "M0 (kg)":M0, "Mb (kg)":Mb, "Is (s)":Is_i, "Ueq (m/s)":Ueq,
+                "λ":ML/(Mp+Ms), "ε":Ms/(Mp+Ms), "RM":RM, "ΔUi (m/s)":dUi
+            })
+            carried = M0
 
-    fig = go.Figure()
-    fig.add_trace(go.Bar(
-        x=stage_df["Stage, i"],
-        y=stage_df["ΔUi (m/s)"],
-        text=[f"{v/1000:.2f} km/s" for v in stage_df["ΔUi (m/s)"]],
-        textposition="outside",
-    ))
-    fig.update_layout(
-        title="Velocity-change contribution of each similar stage",
-        xaxis_title="Stage, i",
-        yaxis_title="ΔUi (m/s)",
-        height=430,
-    )
-    st.plotly_chart(fig, use_container_width=True)
+        df = pd.DataFrame(list(reversed(rows)))
+        total_du = df["ΔUi (m/s)"].sum()
+        a,b,c = st.columns(3)
+        a.metric("Lift-off mass, M0,1", f"{df.iloc[0]['M0 (kg)']:,.1f} kg")
+        b.metric("Final payload", f"{final_payload:,.1f} kg")
+        c.metric("Total ΔU", f"{total_du/1000:.3f} km/s")
 
-with tab2:
-    st.subheader("Two-variable parameter study")
-    st.write(
-        "Choose two assignment variables to vary. The other two are held fixed. "
-        "The plotted result is total velocity change, ΔU."
-    )
+        st.markdown("#### Calculated stage properties")
+        st.dataframe(df, use_container_width=True, hide_index=True)
 
-    variables = [
-        "Number of stages, n",
-        "Specific impulse, Is (s)",
-        "Payload ratio, λ (%)",
-        "Structural mass coefficient, ε (%)",
-    ]
+        fig = go.Figure(go.Bar(
+            x=df["Stage"], y=df["ΔUi (m/s)"],
+            text=[f"{v/1000:.2f} km/s" for v in df["ΔUi (m/s)"]],
+            textposition="outside"
+        ))
+        fig.update_layout(title="Velocity-change contribution of each individual stage",
+                          xaxis_title="Stage", yaxis_title="ΔUi (m/s)", height=430)
+        st.plotly_chart(fig, use_container_width=True)
 
-    x_var = st.selectbox("X-axis variable", variables, index=1)
-    y_options = [v for v in variables if v != x_var]
-    y_var = st.selectbox("Y-axis variable", y_options, index=1)
+        mass_df = df[["Stage","M0 (kg)","Mb (kg)","ML carried (kg)"]].set_index("Stage")
+        st.markdown("#### Mass change through staging")
+        st.line_chart(mass_df, use_container_width=True)
 
-    f1, f2, f3, f4 = st.columns(4)
+with tab_contour:
+    st.subheader("Two-variable study — similar-stage Eq. (8.25)")
+    vars_ = ["Number of stages, n","Specific impulse, Is (s)","Payload ratio, λ (%)","Structural mass coefficient, ε (%)"]
+    xv = st.selectbox("X-axis variable", vars_, index=1)
+    yv = st.selectbox("Y-axis variable", [v for v in vars_ if v != xv], index=1)
 
-    with f1:
-        fixed_n = st.slider("Fixed n", 1, 5, 2, 1, key="fixed_n")
+    c1,c2,c3,c4 = st.columns(4)
+    with c1: fn = st.slider("Fixed n",1,5,2,1,key="fn")
+    with c2: fIs = st.slider("Fixed Is (s)",160,385,300,1,key="fIs")
+    with c3: flam = st.slider("Fixed λ (%)",1.0,15.0,7.0,0.1,key="flam")
+    with c4: feps = st.slider("Fixed ε (%)",18.0,48.0,25.0,0.1,key="feps")
 
-    with f2:
-        fixed_Is = st.slider("Fixed Is (s)", 160, 385, 300, 1, key="fixed_Is")
+    def axis(v):
+        if v=="Number of stages, n": return np.arange(1,6,dtype=float)
+        if v=="Specific impulse, Is (s)": return np.linspace(160,385,90)
+        if v=="Payload ratio, λ (%)": return np.linspace(1,15,90)
+        return np.linspace(18,48,90)
 
-    with f3:
-        fixed_lambda_pct = st.slider(
-            "Fixed λ (%)", 1.0, 15.0, 7.0, 0.1, key="fixed_lambda"
-        )
+    x,y = axis(xv),axis(yv)
+    X,Y = np.meshgrid(x,y)
+    N=np.full_like(X,float(fn)); IS=np.full_like(X,float(fIs))
+    L=np.full_like(X,float(flam)); E=np.full_like(X,float(feps))
+    for v,A in [(xv,X),(yv,Y)]:
+        if v=="Number of stages, n": N=A
+        elif v=="Specific impulse, Is (s)": IS=A
+        elif v=="Payload ratio, λ (%)": L=A
+        else: E=A
+    RM=(1+L/100)/(E/100+L/100)
+    Z=N*(IS*G0)*np.log(RM)/1000
 
-    with f4:
-        fixed_epsilon_pct = st.slider(
-            "Fixed ε (%)", 18.0, 48.0, 25.0, 0.1, key="fixed_epsilon"
-        )
+    fig=go.Figure(go.Contour(x=x,y=y,z=Z,contours=dict(showlabels=True),colorbar=dict(title="ΔU (km/s)")))
+    fig.update_layout(title=f"Total ΔU vs. {xv} and {yv}",xaxis_title=xv,yaxis_title=yv,height=620)
+    st.plotly_chart(fig,use_container_width=True)
 
-    def axis_values(var):
-        if var == "Number of stages, n":
-            return np.arange(1, 6, dtype=float)
-        if var == "Specific impulse, Is (s)":
-            return np.linspace(160, 385, 90)
-        if var == "Payload ratio, λ (%)":
-            return np.linspace(1, 15, 90)
-        if var == "Structural mass coefficient, ε (%)":
-            return np.linspace(18, 48, 90)
+    mn=np.unravel_index(np.argmin(Z),Z.shape); mx=np.unravel_index(np.argmax(Z),Z.shape)
+    st.dataframe(pd.DataFrame({
+        "Point":["Minimum","Maximum"],
+        "ΔU (km/s)":[Z[mn],Z[mx]],
+        xv:[X[mn],X[mx]], yv:[Y[mn],Y[mx]]
+    }),use_container_width=True,hide_index=True)
 
-    x = axis_values(x_var)
-    y = axis_values(y_var)
-    X, Y = np.meshgrid(x, y)
+with tab_eq:
+    st.subheader("Equations and calculation walkthrough")
+    st.write("These are the Chapter 8 equations used in the app, followed by live substitution of the current inputs.")
 
-    N = np.full_like(X, float(fixed_n))
-    IS = np.full_like(X, float(fixed_Is))
-    LAMBDA_PCT = np.full_like(X, float(fixed_lambda_pct))
-    EPSILON_PCT = np.full_like(X, float(fixed_epsilon_pct))
+    st.markdown("### Eqs. (8.18)–(8.21): masses and ratios")
+    st.latex(r"M_0=M_L+M_s+M_p")
+    st.latex(r"M_b=M_L+M_s")
+    st.latex(r"\lambda=\frac{M_L}{M_p+M_s}")
+    st.latex(r"\epsilon=\frac{M_s}{M_p+M_s}")
 
-    for var, values in [(x_var, X), (y_var, Y)]:
-        if var == "Number of stages, n":
-            N = values
-        elif var == "Specific impulse, Is (s)":
-            IS = values
-        elif var == "Payload ratio, λ (%)":
-            LAMBDA_PCT = values
-        elif var == "Structural mass coefficient, ε (%)":
-            EPSILON_PCT = values
+    st.markdown("### Eq. (8.23): back-substitution")
+    st.markdown(r"""
+Let (S=M_p+M_s). Then (M_L=lambda S) and (M_s=epsilon S).
 
-    LAMBDA = LAMBDA_PCT / 100.0
-    EPSILON = EPSILON_PCT / 100.0
+[
+M_0=M_L+M_s+M_p=lambda S+S=(1+lambda)S
+]
 
-    RM_GRID = (1.0 + LAMBDA) / (EPSILON + LAMBDA)
-    UEQ_GRID = IS * G0
-    DELTA_U_GRID = N * UEQ_GRID * np.log(RM_GRID) / 1000.0
+[
+M_b=M_L+M_s=lambda S+epsilon S=(lambda+epsilon)S
+]
 
-    contour = go.Figure(data=go.Contour(
-        x=x,
-        y=y,
-        z=DELTA_U_GRID,
-        contours=dict(showlabels=True, labelfont=dict(size=11)),
-        colorbar=dict(title="ΔU (km/s)"),
-    ))
+Therefore,
 
-    contour.update_layout(
-        title=f"Total ΔU as a function of {x_var} and {y_var}",
-        xaxis_title=x_var,
-        yaxis_title=y_var,
-        height=620,
-    )
+[
+R_M=rac{M_0}{M_b}
+=rac{(1+lambda)S}{(epsilon+lambda)S}
+=oxed{rac{1+lambda}{epsilon+lambda}}
+]
+""")
 
-    st.plotly_chart(contour, use_container_width=True)
+    st.markdown("### Eqs. (8.5), (8.8), and (8.11)")
+    st.latex(r"g_0=9.8066\ \mathrm{m/s^2}")
+    st.latex(r"U_{eq}=I_sg_0")
+    st.latex(r"\Delta U=U_{eq}\ln R_M=g_0I_s\ln R_M")
 
-    min_index = np.unravel_index(np.nanargmin(DELTA_U_GRID), DELTA_U_GRID.shape)
-    max_index = np.unravel_index(np.nanargmax(DELTA_U_GRID), DELTA_U_GRID.shape)
+    st.markdown("### Eq. (8.24): general multi-stage form")
+    st.latex(r"\Delta U=\sum_{i=1}^{n}U_{eq,i}\ln R_{M,i}")
 
-    delta_u_min = float(DELTA_U_GRID[min_index])
-    delta_u_max = float(DELTA_U_GRID[max_index])
+    st.markdown("### Eq. (8.25): similar-stage form")
+    st.latex(r"\Delta U=nU_{eq}\ln\left(\frac{1+\lambda}{\epsilon+\lambda}\right)")
 
-    r1, r2 = st.columns(2)
-    r1.metric("Minimum ΔU in plotted range", f"{delta_u_min:.3f} km/s")
-    r2.metric("Maximum ΔU in plotted range", f"{delta_u_max:.3f} km/s")
-
-    summary_df = pd.DataFrame({
-        "Point": ["Minimum", "Maximum"],
-        "ΔU (km/s)": [delta_u_min, delta_u_max],
-        x_var: [X[min_index], X[max_index]],
-        y_var: [Y[min_index], Y[max_index]],
-    })
-
-    st.dataframe(summary_df, use_container_width=True, hide_index=True)
+    st.divider()
+    if mode.startswith("Similar"):
+        st.markdown("## Current similar-stage calculation")
+        n=st.session_state.get("sim_n",2); Is=st.session_state.get("sim_Is",300)
+        lam=st.session_state.get("sim_lam",7.0)/100; eps=st.session_state.get("sim_eps",25.0)/100
+        RM=rm_from_ratios(lam,eps); Ueq=ueq(Is); dui=Ueq*np.log(RM); total=n*dui
+        st.latex(rf"R_M=\frac{{1+{lam:.4f}}}{{{eps:.4f}+{lam:.4f}}}={RM:.4f}")
+        st.latex(rf"U_{{eq}}=({Is})(9.8066)={Ueq:.2f}\ \mathrm{{m/s}}")
+        st.latex(rf"\Delta U_i=({Ueq:.2f})\ln({RM:.4f})={dui:.2f}\ \mathrm{{m/s}}")
+        st.latex(rf"\Delta U_{{total}}=({n})({dui:.2f})={total:.2f}\ \mathrm{{m/s}}")
+        st.markdown("The propellant fraction within (M_p+M_s) follows directly from Eq. (8.21):")
+        st.latex(rf"\frac{{M_p}}{{M_p+M_s}}=1-\epsilon=1-{eps:.4f}={1-eps:.4f}")
+    else:
+        st.markdown("## Current individual-stage calculation")
+        n=st.session_state.get("ind_n",2)
+        final_payload=float(final_payload)
+        vals=[]
+        for i in range(1,n+1):
+            vals.append((i,float(st.session_state[f"Mp{i}"]),float(st.session_state[f"Ms{i}"]),float(st.session_state[f"Is{i}"])))
+        carried=final_payload; calc=[]
+        for i,Mp,Ms,Is_i in reversed(vals):
+            ML=carried; M0=ML+Ms+Mp; Mb=ML+Ms; RM=M0/Mb; U=ueq(Is_i); dU=U*np.log(RM)
+            calc.append((i,ML,Mp,Ms,M0,Mb,Is_i,U,RM,dU)); carried=M0
+        calc=list(reversed(calc))
+        for i,ML,Mp,Ms,M0,Mb,Is_i,U,RM,dU in calc:
+            with st.expander(f"Stage {i} calculation", expanded=(i==1)):
+                st.latex(rf"M_{{0,{i}}}={ML:.2f}+{Ms:.2f}+{Mp:.2f}={M0:.2f}\ \mathrm{{kg}}")
+                st.latex(rf"M_{{b,{i}}}={ML:.2f}+{Ms:.2f}={Mb:.2f}\ \mathrm{{kg}}")
+                st.latex(rf"R_{{M,{i}}}=\frac{{{M0:.2f}}}{{{Mb:.2f}}}={RM:.4f}")
+                st.latex(rf"U_{{eq,{i}}}=({Is_i:.1f})(9.8066)={U:.2f}\ \mathrm{{m/s}}")
+                st.latex(rf"\Delta U_{i}=({U:.2f})\ln({RM:.4f})={dU:.2f}\ \mathrm{{m/s}}")
+        total=sum(r[-1] for r in calc)
+        st.latex(rf"\Delta U_{{total}}={total:.2f}\ \mathrm{{m/s}}")
 
 st.divider()
-st.caption(
-    "This app evaluates the ideal velocity-change equations presented in Chapter 8. "
-    "It does not add gravity, drag, steering, or trajectory losses to the staging equation."
-)
+st.caption("Ideal Chapter 8 staging equations only; gravity, drag, steering, and trajectory losses are not added to Eqs. (8.24) or (8.25).")
